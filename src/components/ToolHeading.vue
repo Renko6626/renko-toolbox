@@ -7,7 +7,10 @@ defineProps<{ tool: Tool }>()
 <template>
   <div class="heading">
     <p class="path mono">/t/{{ tool.id }}</p>
-    <h1 class="name"><span class="dot" aria-hidden="true">●</span>{{ tool.name }}</h1>
+    <h1 class="name">
+      <span class="dot" aria-hidden="true">●</span>{{ tool.name }}
+      <span v-if="tool.experimental" class="exp mono">实验性</span>
+    </h1>
     <p class="desc">{{ tool.description }}</p>
   </div>
 </template>
@@ -38,6 +41,15 @@ defineProps<{ tool: Tool }>()
   color: var(--accent);
   font-size: 0.3em;
   line-height: 1;
+}
+.exp {
+  margin-left: var(--s-3);
+  padding: 2px var(--s-2);
+  border: 1px solid var(--line);
+  font-size: var(--step--1);
+  font-weight: 400;
+  color: var(--text-mute);
+  vertical-align: middle;
 }
 .desc {
   margin-top: var(--s-3);

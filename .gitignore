@@ -6,3 +6,12 @@ dist
 !.vscode/extensions.json
 .idea
 *.log
+
+# 语义搜索的构建产物（scripts/prepare-semantic.ts 生成）
+public/models/
+public/ort/
+
+
+# 明文和密钥永远不入库
+.env
+private/

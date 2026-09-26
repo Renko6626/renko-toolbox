@@ -3,20 +3,23 @@ import { computed, ref } from 'vue'
 import { NButton } from 'naive-ui'
 import type { Quote } from './parse'
 import { pieces } from './search'
-import { all } from './data'
+import { quotes } from './vault'
 
 const CTX = 5
 
-const props = defineProps<{ q: Quote; hl: RegExp | null }>()
+const props = defineProps<{ q: Quote; hl: RegExp | null; score?: number }>()
 const emit = defineEmits<{ copy: [q: Quote]; day: [q: Quote] }>()
 
 const open = ref(false)
-const around = computed(() => all.slice(Math.max(0, props.q.i - CTX), props.q.i + CTX + 1))
+const around = computed(() => quotes.value!.slice(Math.max(0, props.q.i - CTX), props.q.i + CTX + 1))
 </script>
 
 <template>
   <li class="row">
-    <button class="time mono" title="只看这一天" @click="emit('day', q)">{{ q.time }}</button>
+    <div class="meta">
+      <button class="time mono" title="只看这一天" @click="emit('day', q)">{{ q.time }}</button>
+      <span v-if="score !== undefined" class="score mono" title="语义相似度，越接近 1 越像">{{ score.toFixed(2) }}</span>
+    </div>
     <p class="text"><template v-for="(p, k) in pieces(q.text, hl)" :key="k"><mark v-if="p.hit">{{ p.s }}</mark><template v-else>{{ p.s }}</template></template></p>
     <div class="acts">
       <NButton size="small" quaternary :aria-expanded="open" @click="open = !open">{{ open ? '收起' : '上下文' }}</NButton>
@@ -42,9 +45,17 @@ const around = computed(() => all.slice(Math.max(0, props.q.i - CTX), props.q.i 
   padding: var(--s-3) 0;
   border-bottom: 1px solid var(--hairline);
 }
-.time {
+.meta {
   grid-column: 1 / -1;
-  justify-self: start;
+  display: flex;
+  gap: var(--s-3);
+  align-items: baseline;
+}
+.score {
+  font-size: var(--step--1);
+  color: var(--text);
+}
+.time {
   padding: 0;
   border: 0;
   background: none;
@@ -118,8 +129,10 @@ mark {
     column-gap: var(--s-5);
     align-items: baseline;
   }
-  .time {
+  .meta {
     grid-column: auto;
+    flex-direction: column;
+    gap: 0;
   }
   .ctx {
     grid-column: 2 / -1;
