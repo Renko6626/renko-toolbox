@@ -110,6 +110,9 @@ export const naiveOverrides: GlobalThemeOverrides = {
     color: TOKEN.raise,
     textColor: TOKEN.text,
     boxShadow: `0 0 0 1px ${TOKEN.line}`,
+    // 成功提示不需要绿色，✓ 形状本身就说明了结果；失败仍保留默认红
+    iconColorSuccess: TOKEN.text,
+    iconColorInfo: TOKEN.text,
   },
   Dialog: {
     borderRadius: '0px',
