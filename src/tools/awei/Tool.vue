@@ -1,50 +1,88 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { NButton, NCheckbox, NDatePicker, NInput, NRadioButton, NRadioGroup, useMessage } from 'naive-ui'
-import raw from './data.txt?raw'
-import { parseQuotes, type Quote } from './parse'
+import type { Quote } from './parse'
+import { matches, norm, parseQuery } from './search'
+import { all, months } from './data'
+import QuoteRow from './QuoteRow.vue'
 
-const all = parseQuotes(raw)
-const DAY = 86_400_000
 const PAGE = 100
 
-const q = ref('')
-const range = ref<[number, number] | null>(null)
-const order = ref<'desc' | 'asc'>('desc')
+// 预先算好归一化文本和「有效长度」（去掉标点、符号、空白后的字数）
+const normed = all.map((x) => norm(x.text))
+const bare = all.map((x) => x.text.replace(/[\p{P}\p{S}\s]/gu, '').length)
+
+// ---- 状态与 URL 同步：搜索条件写进 #/t/awei?q=…&from=…&to=…&short=1，可以直接分享 ----
+const route = useRoute()
+const router = useRouter()
+
+const fmt = (ts: number) => {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const parseDay = (s: unknown) => {
+  const m = typeof s === 'string' && /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : null
+}
+
+const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
+const from0 = parseDay(route.query.from)
+const to0 = parseDay(route.query.to)
+const range = ref<[number, number] | null>(from0 !== null && to0 !== null ? [from0, to0] : null)
+const hideShort = ref(route.query.short === '1')
+const order = ref<'desc' | 'asc'>(route.query.order === 'asc' ? 'asc' : 'desc')
 const withTime = ref(false)
 const shown = ref(PAGE)
+const picked = ref<Quote | null>(null)
 
-const terms = computed(() => q.value.trim().toLowerCase().split(/\s+/).filter(Boolean))
+watch([q, range, hideShort, order], () => {
+  shown.value = PAGE
+  const query: Record<string, string> = {}
+  if (q.value.trim()) query.q = q.value.trim()
+  if (range.value) {
+    query.from = fmt(range.value[0])
+    query.to = fmt(range.value[1])
+  }
+  if (hideShort.value) query.short = '1'
+  if (order.value === 'asc') query.order = 'asc'
+  router.replace({ query })
+})
+
+// ---- 筛选 ----
+const parsed = computed(() => parseQuery(q.value))
 
 const results = computed(() => {
   const [from, to] = range.value ?? [-Infinity, Infinity]
-  const ts = terms.value
-  const hit = all.filter((x) => {
-    if (x.day < from || x.day > to) return false
-    const t = x.text.toLowerCase()
-    return ts.every((k) => t.includes(k))
-  })
+  const pq = parsed.value
+  const hit = all.filter(
+    (x) =>
+      x.day >= from &&
+      x.day <= to &&
+      (!hideShort.value || bare[x.i] >= 3) &&
+      matches(pq, x.text, normed[x.i]),
+  )
   return order.value === 'desc' ? hit.reverse() : hit
 })
 
-watch([terms, range, order], () => (shown.value = PAGE))
-
-// 高亮：把命中的片段切出来单独包一层。用正则一次切，避免多个关键词互相覆盖。
-const splitter = computed(() => {
-  if (!terms.value.length) return null
-  const esc = terms.value.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  return new RegExp(`(${esc.join('|')})`, 'gi')
-})
-function pieces(text: string) {
-  const re = splitter.value
-  if (!re) return [{ s: text, hit: false }]
-  return text.split(re).map((s, idx) => ({ s, hit: idx % 2 === 1 }))
+// ---- 月份条：点一下只看那个月，再点取消 ----
+const activeMonth = computed(() =>
+  range.value ? months.find((m) => m.from === range.value![0] && m.to === range.value![1])?.key : undefined,
+)
+function toggleMonth(m: (typeof months)[number]) {
+  range.value = activeMonth.value === m.key ? null : [m.from, m.to]
 }
 
 function onlyDay(x: Quote) {
   range.value = [x.day, x.day]
 }
 
+function pick() {
+  const pool = results.value
+  if (pool.length) picked.value = pool[Math.floor(Math.random() * pool.length)]
+}
+
+// ---- 复制 ----
 const message = useMessage()
 async function copy(x: Quote) {
   const s = withTime.value ? `[${x.time}] 阿伪: ${x.text}` : x.text
@@ -65,44 +103,89 @@ async function copy(x: Quote) {
   message.success('已复制')
 }
 
-const first = all[0]?.day
-const last = all[all.length - 1]?.day
-const disabledDate = (ts: number) => ts < first - DAY || ts > last + DAY
+// ---- 按 / 聚焦搜索框 ----
+const input = ref<InstanceType<typeof NInput> | null>(null)
+function onKey(e: KeyboardEvent) {
+  const t = e.target as HTMLElement
+  if (e.key === '/' && !/^(INPUT|TEXTAREA)$/.test(t.tagName) && !t.isContentEditable) {
+    e.preventDefault()
+    input.value?.focus()
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
   <div class="controls">
     <NInput
+      ref="input"
       v-model:value="q"
       class="kw"
-      placeholder="关键词，空格分隔表示同时包含"
+      placeholder="搜点什么（按 / 聚焦）"
       clearable
       autofocus
+      :status="parsed.error ? 'error' : undefined"
     />
     <NDatePicker
       v-model:value="range"
       type="daterange"
       class="range"
       clearable
-      :is-date-disabled="disabledDate"
       start-placeholder="起始日期"
       end-placeholder="结束日期"
     />
-    <NRadioGroup v-model:value="order">
+  </div>
+  <p class="hint" :class="{ err: parsed.error }">
+    <template v-if="parsed.error">{{ parsed.error }}</template>
+    <template v-else>
+      空格 = 同时包含　<code>a|b</code> = 任一　<code>-词</code> = 排除　<code>/正则/</code> = 正则
+    </template>
+  </p>
+
+  <div class="months" role="group" aria-label="按月份筛选">
+    <button
+      v-for="m in months"
+      :key="m.key"
+      class="month"
+      :class="{ on: activeMonth === m.key }"
+      :aria-pressed="activeMonth === m.key"
+      @click="toggleMonth(m)"
+    >
+      <span class="mono">{{ m.key }}</span>
+      <span class="mono n">{{ m.count }}</span>
+    </button>
+  </div>
+
+  <div class="opts">
+    <NRadioGroup v-model:value="order" size="small">
       <NRadioButton value="desc">新的在前</NRadioButton>
       <NRadioButton value="asc">旧的在前</NRadioButton>
     </NRadioGroup>
+    <NCheckbox v-model:checked="hideShort">隐藏不足 3 字的</NCheckbox>
     <NCheckbox v-model:checked="withTime">复制时带上时间</NCheckbox>
+    <NButton size="small" :disabled="!results.length" @click="pick">随便翻一条</NButton>
   </div>
+
+  <section v-if="picked" class="picked" aria-label="随机抽到的一条">
+    <div class="picked-head">
+      <span class="eyebrow">翻到了</span>
+      <button class="close" @click="picked = null">收起</button>
+    </div>
+    <ul><QuoteRow :key="picked.i" :q="picked" :hl="null" @copy="copy" @day="onlyDay" /></ul>
+  </section>
 
   <p class="stat mono">{{ results.length }} / {{ all.length }} 条</p>
 
   <ul class="list">
-    <li v-for="x in results.slice(0, shown)" :key="x.i" class="row">
-      <button class="time mono" title="只看这一天" @click="onlyDay(x)">{{ x.time }}</button>
-      <p class="text"><template v-for="(p, k) in pieces(x.text)" :key="k"><mark v-if="p.hit">{{ p.s }}</mark><template v-else>{{ p.s }}</template></template></p>
-      <NButton size="small" class="copy" @click="copy(x)">复制</NButton>
-    </li>
+    <QuoteRow
+      v-for="x in results.slice(0, shown)"
+      :key="x.i"
+      :q="x"
+      :hl="parsed.highlight"
+      @copy="copy"
+      @day="onlyDay"
+    />
     <li v-if="!results.length" class="empty">没有符合条件的语录。换个关键词，或者清掉日期范围。</li>
   </ul>
 
@@ -115,35 +198,84 @@ const disabledDate = (ts: number) => ts < first - DAY || ts > last + DAY
 .controls {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: var(--s-3);
 }
-.kw {
-  flex: 1 1 18rem;
-  max-width: 28rem;
-}
+.kw,
 .range {
   flex: 1 1 18rem;
   max-width: 28rem;
 }
-.stat {
-  margin-top: var(--s-4);
-  padding-bottom: var(--s-2);
+.hint {
+  margin-top: var(--s-2);
   font-size: var(--step--1);
   color: var(--text-mute);
-  border-bottom: 1px solid var(--hairline);
 }
-.row {
+.hint.err {
+  color: var(--accent);
+}
+code {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.months {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--s-1) var(--s-4);
-  align-items: start;
-  padding: var(--s-3) 0;
-  border-bottom: 1px solid var(--hairline);
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  margin-top: var(--s-4);
+  border-top: 1px solid var(--hairline);
+  border-left: 1px solid var(--hairline);
 }
-.time {
-  grid-column: 1 / -1;
-  justify-self: start;
+.month {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: none;
+  color: var(--text);
+  font-size: var(--step--1);
+  cursor: pointer;
+  transition: background-color 120ms linear;
+}
+.month:hover {
+  background: var(--bg-raise);
+}
+.month .n {
+  color: var(--text-mute);
+}
+.month.on {
+  background: var(--text);
+  color: var(--bg);
+}
+.month.on .n {
+  color: var(--bg);
+}
+
+.opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+  margin-top: var(--s-4);
+}
+
+.picked {
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-3) 0;
+  border: 1px solid var(--line);
+}
+.picked-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.picked :deep(.row) {
+  border-bottom: 0;
+}
+.close {
   padding: 0;
   border: 0;
   background: none;
@@ -151,17 +283,16 @@ const disabledDate = (ts: number) => ts < first - DAY || ts > last + DAY
   font-size: var(--step--1);
   cursor: pointer;
 }
-.time:hover {
+.close:hover {
   color: var(--text);
 }
-.text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-width: var(--measure-cjk);
-}
-mark {
-  background: var(--text);
-  color: var(--bg);
+
+.stat {
+  margin-top: var(--s-5);
+  padding-bottom: var(--s-2);
+  font-size: var(--step--1);
+  color: var(--text-mute);
+  border-bottom: 1px solid var(--hairline);
 }
 .empty {
   padding: var(--s-5) 0;
@@ -169,16 +300,5 @@ mark {
 }
 .more {
   margin-top: var(--s-4);
-}
-
-@media (min-width: 900px) {
-  .row {
-    grid-template-columns: 12rem minmax(0, 1fr) auto;
-    column-gap: var(--s-5);
-    align-items: baseline;
-  }
-  .time {
-    grid-column: auto;
-  }
 }
 </style>
