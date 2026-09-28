@@ -7,6 +7,16 @@ export interface Face {
   score: number
 }
 
+export function animeScanPlan(width: number, height: number, quality: 'fast' | 'detail') {
+  const maxSide = quality === 'detail' ? 1280 : 768
+  const scale = Math.min(1, maxSide / Math.max(width, height))
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+    scaleFactor: quality === 'detail' ? 1.1 : 1.2,
+  }
+}
+
 export function facesFromAnimeRects(
   rects: { x: number; y: number; width: number; height: number }[],
   scaleX: number,

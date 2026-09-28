@@ -4,7 +4,7 @@ import type { FaceDetector } from '@mediapipe/tasks-vision'
 import { NButton, useMessage } from 'naive-ui'
 import { mirrorSegments } from '../mirror/geometry'
 import { detectFaces, loadFaceDetector } from './detector'
-import { detectAnimeFaces } from './anime-detector'
+import { detectAnimeFaces, loadAnimeDetector } from './anime-detector'
 import type { Face } from './faces'
 import { useImageImport } from '../mirror/useImageImport'
 
@@ -23,6 +23,8 @@ const renderError = ref('')
 const axis = ref(0.5)
 const direction = ref<Direction>('left')
 const faceMode = ref<FaceMode>('photo')
+const animeQuality = ref<'fast' | 'detail'>('fast')
+const detectionStatus = ref('')
 const canvas = ref<HTMLCanvasElement | null>(null)
 
 const sourceWidth = computed(() => source.value?.naturalWidth ?? 0)
@@ -39,6 +41,10 @@ let frame = 0
 let detectorPromise: Promise<FaceDetector> | null = null
 let axisTouched = false
 
+function elapsedMs(started: number) {
+  return Math.round((performance.now() - started) * 10) / 10
+}
+
 function getDetector() {
   if (!detectorPromise) detectorPromise = loadFaceDetector()
   return detectorPromise
@@ -46,6 +52,8 @@ function getDetector() {
 
 async function loadFile(file: File) {
   const version = ++loadVersion
+  const decodeStarted = performance.now()
+  console.info('[smart-mirror] 图片解码开始', { loadId: version, bytes: file.size, type: file.type })
   detectionVersion++
   detecting.value = false
   const url = URL.createObjectURL(file)
@@ -55,17 +63,23 @@ async function loadFile(file: File) {
   try {
     await image.decode()
     if (!image.naturalWidth || !image.naturalHeight) throw new Error('无法读取图片尺寸')
+    console.info('[smart-mirror] 图片解码完成', {
+      loadId: version, elapsedMs: elapsedMs(decodeStarted),
+      width: image.naturalWidth, height: image.naturalHeight,
+    })
     if (version !== loadVersion) {
       URL.revokeObjectURL(url)
       return
     }
-  } catch {
+  } catch (error) {
+    console.error('[smart-mirror] 图片解码失败', { loadId: version, elapsedMs: elapsedMs(decodeStarted), error })
     URL.revokeObjectURL(url)
     if (version === loadVersion) message.error('无法打开这张图片，请换一张试试')
     return
   }
 
   const oldUrl = sourceUrl.value
+  animeQuality.value = 'fast'
   axis.value = image.naturalWidth / 2
   axisTouched = false
   faces.value = []
@@ -82,34 +96,59 @@ async function loadFile(file: File) {
 
 async function runDetection(image: HTMLImageElement) {
   const version = ++detectionVersion
+  const mode = faceMode.value
+  const quality = animeQuality.value
+  const totalStarted = performance.now()
+  let outcome = 'cancelled'
+  let faceCount = 0
+  console.info('[smart-mirror] 检测开始', {
+    runId: version, mode, quality, width: image.naturalWidth, height: image.naturalHeight,
+  })
   faces.value = []
   selectedFace.value = null
   detectionError.value = ''
   detecting.value = true
+  detectionStatus.value = faceMode.value === 'anime' ? '正在加载二次元检测组件…' : '正在检测人脸…'
 
   try {
     let found: Face[]
-    if (faceMode.value === 'anime') {
-      found = await detectAnimeFaces(image, () => version === detectionVersion)
+    if (mode === 'anime') {
+      found = await detectAnimeFaces(image, () => version === detectionVersion,
+        quality, () => {
+          if (version === detectionVersion) detectionStatus.value = '正在扫描二次元人脸…'
+        }, version)
     } else {
+      let started = performance.now()
       const detector = await getDetector()
+      console.info('[smart-mirror][photo] 模型就绪', { runId: version, elapsedMs: elapsedMs(started) })
       if (version !== detectionVersion) return
+      started = performance.now()
       found = await detectFaces(detector, image, () => version === detectionVersion)
+      console.info('[smart-mirror][photo] 人脸扫描完成', {
+        runId: version, elapsedMs: elapsedMs(started), faces: found.length,
+      })
     }
     if (version !== detectionVersion) return
 
+    outcome = 'success'
+    faceCount = found.length
     faces.value = found
     if (found.length && !axisTouched) {
       const largest = found.reduce((best, face, index) =>
         face.width * face.height > found[best].width * found[best].height ? index : best, 0)
       selectFace(largest)
     }
-  } catch {
+  } catch (error) {
+    outcome = 'error'
+    console.error('[smart-mirror] 检测失败', { runId: version, mode, quality, error })
     if (version === detectionVersion) {
       if (faceMode.value === 'photo') detectorPromise = null
       detectionError.value = '人脸检测未能完成；仍可手动移动对称轴。'
     }
   } finally {
+    console.info('[smart-mirror] 检测结束', {
+      runId: version, mode, quality, outcome, faces: faceCount, elapsedMs: elapsedMs(totalStarted),
+    })
     if (version === detectionVersion) detecting.value = false
   }
 }
@@ -119,11 +158,20 @@ const { chooseFile, pasteFromClipboard } = useImageImport(loadFile, (text) => me
 function setFaceMode(mode: FaceMode) {
   if (faceMode.value === mode) return
   faceMode.value = mode
+  animeQuality.value = 'fast'
+  if (mode === 'anime') void loadAnimeDetector().catch(() => {})
   if (source.value) {
     axis.value = source.value.naturalWidth / 2
     axisTouched = false
     void runDetection(source.value)
   }
+}
+
+function runDetailedScan() {
+  if (!source.value || detecting.value || faceMode.value !== 'anime') return
+  animeQuality.value = 'detail'
+  axisTouched = false
+  void runDetection(source.value)
 }
 
 function selectFace(index: number) {
@@ -259,10 +307,13 @@ onUnmounted(() => {
     <template v-if="source">
       <div class="controls">
         <div class="face-picker">
-          <p class="eyebrow">识别到的人脸</p>
-          <p v-if="detecting" class="status" role="status">{{ faceMode === 'anime' ? '正在检测二次元人脸…' : '正在检测人脸…' }}</p>
+          <div class="face-picker-head">
+            <p class="eyebrow">识别到的人脸</p>
+            <NButton v-if="faceMode === 'anime' && animeQuality === 'fast' && !detecting" size="small" @click="runDetailedScan">细致扫描</NButton>
+          </div>
+          <p v-if="detecting" class="status" role="status">{{ detectionStatus }}</p>
           <p v-else-if="detectionError" class="status" role="alert">{{ detectionError }}</p>
-          <p v-else-if="!faces.length" class="status">{{ faceMode === 'anime' ? '没有找到二次元人脸；可以手动设置对称轴。' : '没有找到人脸；可以手动设置对称轴。' }}</p>
+          <p v-else-if="!faces.length" class="status">{{ faceMode === 'anime' ? '没有找到二次元人脸；可尝试细致扫描或手动设轴。' : '没有找到人脸；可以手动设置对称轴。' }}</p>
           <div v-else class="face-buttons">
             <button
               v-for="(face, index) in faces"
@@ -402,7 +453,7 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--hairline);
 }
 .face-picker { grid-column: 1 / -1; min-width: 0; padding-bottom: var(--s-4); margin-bottom: var(--s-4); border-bottom: 1px solid var(--hairline); }
-.face-picker > .eyebrow { margin-bottom: var(--s-3); }
+.face-picker-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-3); }
 .face-buttons { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .control { min-width: 0; padding: 0 var(--s-4) var(--s-4); border-left: 1px solid var(--hairline); }
 .face-picker + .control { padding-left: 0; border-left: 0; }

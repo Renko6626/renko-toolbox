@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { facesFromAnimeRects, facesFromDetections, mergeFaces } from './faces.ts'
+import { animeScanPlan, facesFromAnimeRects, facesFromDetections, mergeFaces } from './faces.ts'
 
 test('uses eye midpoint and nose to place a face axis on a half-pixel', () => {
   const faces = facesFromDetections([{
@@ -50,4 +50,10 @@ test('anime face boxes map back from the detection canvas to the original image'
     { x: 20, y: 60, width: 42, height: 90, axis: 41 },
     { x: 160, y: 15, width: 40, height: 60, axis: 180 },
   ])
+})
+
+test('default anime scan reduces work while detail scan keeps the larger search', () => {
+  assert.deepEqual(animeScanPlan(2000, 1000, 'fast'), { width: 768, height: 384, scaleFactor: 1.2 })
+  assert.deepEqual(animeScanPlan(2000, 1000, 'detail'), { width: 1280, height: 640, scaleFactor: 1.1 })
+  assert.deepEqual(animeScanPlan(500, 250, 'fast'), { width: 500, height: 250, scaleFactor: 1.2 })
 })
