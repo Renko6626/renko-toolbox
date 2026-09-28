@@ -62,7 +62,7 @@ function compositor(animation: GifAnimation) {
       if (frame.patch[from + 3]) pixels.set(frame.patch.subarray(from, from + 4), ((y + d.top) * width + x + d.left) * 4)
     }
     previous = frame
-    return { pixels, delay: Math.max(20, frame.delay * 10) }
+    return { pixels, delay: Math.max(0, frame.delay * 10) }
   }
 }
 

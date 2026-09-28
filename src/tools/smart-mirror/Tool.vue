@@ -30,6 +30,9 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const gif = shallowRef<GifAnimation | null>(null)
 const gifBusy = ref(false)
 const gifProgress = ref(0)
+const gifResultUrl = ref('')
+const gifResult = shallowRef<Blob | null>(null)
+let gifJob = 0
 
 const sourceWidth = computed(() => source.value?.naturalWidth ?? 0)
 const sourceHeight = computed(() => source.value?.naturalHeight ?? 0)
@@ -44,6 +47,13 @@ let detectionVersion = 0
 let frame = 0
 let detectorPromise: Promise<FaceDetector> | null = null
 let axisTouched = false
+
+function invalidateGifResult() {
+  gifJob++
+  gifResult.value = null
+  if (gifResultUrl.value) URL.revokeObjectURL(gifResultUrl.value)
+  gifResultUrl.value = ''
+}
 
 function elapsedMs(started: number) {
   return Math.round((performance.now() - started) * 10) / 10
@@ -100,6 +110,7 @@ async function loadFile(file: File) {
   selectedFace.value = null
   filename.value = file.name
   gif.value = animation
+  invalidateGifResult()
   sourceUrl.value = url
   source.value = image
   detectionError.value = ''
@@ -258,30 +269,64 @@ function scheduleRender() {
   frame = requestAnimationFrame(render)
 }
 
-watch([source, axis, direction], scheduleRender, { flush: 'post' })
+watch([source, axis, direction], () => {
+  scheduleRender()
+  if (gif.value) invalidateGifResult()
+}, { flush: 'post' })
 
-function download() {
-  if (!canvas.value) return
-  if (frame) cancelAnimationFrame(frame)
-  render()
-  if (renderError.value) return
+async function generateGif() {
+  if (!gif.value || gifBusy.value) return gifResult.value
+  const job = ++gifJob
+  gifBusy.value = true
+  gifProgress.value = 0
+  try {
+    const blob = await mirrorGif(gif.value, axis.value, direction.value,
+      value => { if (job === gifJob) gifProgress.value = value }, () => job === gifJob)
+    if (job !== gifJob) return null
+    gifResult.value = blob
+    gifResultUrl.value = URL.createObjectURL(blob)
+    return blob
+  } catch (error) {
+    if (job === gifJob && error instanceof Error && error.message !== '已取消 GIF 导出') message.error(error.message)
+    return null
+  } finally {
+    if (job === gifJob) gifBusy.value = false
+  }
+}
+
+async function copyGif() {
+  const blob = await generateGif()
+  if (!blob) return
+  if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+    message.warning('当前浏览器不支持复制 GIF，请使用下载按钮。')
+    return
+  }
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/gif': blob })])
+    message.success('GIF 已复制到剪贴板')
+  } catch { message.error('复制 GIF 失败，请检查剪贴板权限。') }
+}
+
+async function download() {
+  if (!gif.value) {
+    if (!canvas.value) return
+    if (frame) cancelAnimationFrame(frame)
+    render()
+    if (renderError.value) return
+  }
 
   const name = filename.value.replace(/\.[^.]+$/, '') || 'image'
   const selectedDirection = direction.value
   if (gif.value) {
-    gifBusy.value = true
-    gifProgress.value = 0
-    void mirrorGif(gif.value, axis.value, selectedDirection, value => { gifProgress.value = value }, () => source.value !== null)
-      .then(blob => {
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a'); link.href = url; link.download = `${name}-face-mirror-${selectedDirection}.gif`; link.click()
-        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-      }).catch(error => { if (error instanceof Error && error.message !== '已取消 GIF 导出') message.error(error.message) })
-      .finally(() => { gifBusy.value = false })
+    const blob = await generateGif()
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a'); link.href = url; link.download = `${name}-face-mirror-${selectedDirection}.gif`; link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     return
   }
   try {
-    canvas.value.toBlob((blob) => {
+    canvas.value!.toBlob((blob) => {
       if (!blob) {
         message.error('导出失败，请换一张较小的图片')
         return
@@ -303,6 +348,7 @@ onUnmounted(() => {
   detectionVersion++
   if (frame) cancelAnimationFrame(frame)
   if (sourceUrl.value) URL.revokeObjectURL(sourceUrl.value)
+  if (gifResultUrl.value) URL.revokeObjectURL(gifResultUrl.value)
   detectorPromise?.then((detector) => detector.close()).catch(() => {})
 })
 </script>
@@ -408,7 +454,12 @@ onUnmounted(() => {
         </figure>
         <figure>
           <figcaption class="eyebrow">处理结果</figcaption>
-          <canvas ref="canvas" :aria-label="`处理后的对称图，尺寸 ${outputWidth} 乘 ${sourceHeight} 像素`" role="img"></canvas>
+          <img v-if="gifResultUrl" :src="gifResultUrl" :alt="`处理后的 GIF，尺寸 ${outputWidth} 乘 ${sourceHeight} 像素`" class="gif-result" />
+          <canvas v-else ref="canvas" :aria-label="`处理后的对称图，尺寸 ${outputWidth} 乘 ${sourceHeight} 像素`" role="img"></canvas>
+          <div v-if="gif" class="gif-actions">
+            <NButton size="small" :loading="gifBusy" @click="generateGif">{{ gifResultUrl ? '重新生成 GIF' : '生成 GIF 预览' }}</NButton>
+            <NButton size="small" :disabled="!gifResultUrl || gifBusy" @click="copyGif">复制 GIF</NButton>
+          </div>
         </figure>
       </div>
     </template>
@@ -516,6 +567,8 @@ figcaption { width: 100%; padding: var(--s-3) var(--s-4); border-bottom: 1px sol
 .face-number { position: absolute; top: 0; left: 0; padding: 2px 5px; background: var(--text); color: var(--bg); font-size: var(--step--1); line-height: 1; }
 .axis-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--text); box-shadow: 0 0 0 1px var(--bg); pointer-events: none; }
 canvas { display: block; max-width: calc(100% - 2 * var(--s-4)); max-height: 70vh; width: auto; height: auto; margin: auto; }
+.gif-result { display: block; max-width: calc(100% - 2 * var(--s-4)); max-height: 70vh; width: auto; height: auto; margin: auto; }
+.gif-actions { display: flex; gap: var(--s-2); justify-content: center; padding: 0 var(--s-4) var(--s-4); }
 .empty {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
