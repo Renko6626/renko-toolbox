@@ -148,7 +148,7 @@ async function generateGif() {
 }
 
 async function copyGif() {
-  const blob = await generateGif()
+  const blob = gifResult.value
   if (!blob) return
   if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
     message.warning('当前浏览器不支持复制 GIF，请使用下载按钮。')
