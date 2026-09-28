@@ -1,4 +1,5 @@
 import { animeScanPlan, facesFromAnimeRects, type Face } from './faces'
+import opencvScriptUrl from '@techstark/opencv-js/dist/opencv.js?url'
 
 interface CvMat { delete(): void }
 interface CvRect { x: number; y: number; width: number; height: number }
@@ -27,6 +28,7 @@ interface AnimeCv {
 
 const MODEL_NAME = 'lbpcascade_animeface.xml'
 let runtime: Promise<{ cv: AnimeCv; cascade: CvCascade }> | null = null
+let cvScript: Promise<{ cv: AnimeCv }> | null = null
 let modelAttempt = 0
 let scanSequence = 0
 
@@ -38,25 +40,80 @@ function log(stage: string, started: number, details: Record<string, number | st
   console.info(`[smart-mirror][anime] ${stage}`, { elapsedMs: elapsedMs(started), ...details })
 }
 
+function loadOpenCvScript(attempt: number): Promise<{ cv: AnimeCv }> {
+  const existing = (window as Window & { cv?: AnimeCv }).cv
+  if (existing?.Mat) return Promise.resolve({ cv: existing })
+  if (cvScript) return cvScript
+
+  cvScript = new Promise<{ cv: AnimeCv }>((resolve, reject) => {
+    const downloadStarted = performance.now()
+    const script = document.createElement('script')
+    let runtimeTimer = 0
+    let pollTimer = 0
+    let settled = false
+
+    function finish(error?: Error, cv?: AnimeCv) {
+      if (settled) return
+      settled = true
+      window.clearTimeout(downloadTimer)
+      window.clearTimeout(runtimeTimer)
+      window.clearInterval(pollTimer)
+      script.onload = null
+      script.onerror = null
+      if (error) {
+        script.remove()
+        reject(error)
+      } else if (cv) {
+        resolve({ cv })
+      }
+    }
+
+    const downloadTimer = window.setTimeout(() => {
+      finish(new Error('OpenCV.js 下载超时，请检查网络后重试'))
+    }, 45_000)
+
+    script.async = true
+    script.src = opencvScriptUrl
+    script.onerror = () => finish(new Error('OpenCV.js 下载失败，请检查网络后重试'))
+    script.onload = () => {
+      log('OpenCV.js 下载并解析', downloadStarted, { attempt })
+      const cv = (window as Window & { cv?: AnimeCv }).cv
+      if (!cv) {
+        finish(new Error('OpenCV.js 已加载，但未找到运行时'))
+        return
+      }
+      const runtimeStarted = performance.now()
+      const ready = () => {
+        if (settled || !cv.Mat) return
+        log('OpenCV 运行时初始化', runtimeStarted, { attempt })
+        finish(undefined, cv)
+      }
+      if (cv.Mat) {
+        ready()
+      } else {
+        const previous = cv.onRuntimeInitialized
+        cv.onRuntimeInitialized = () => { try { previous?.() } finally { ready() } }
+        pollTimer = window.setInterval(ready, 100)
+        runtimeTimer = window.setTimeout(() => {
+          finish(new Error('OpenCV 运行时初始化超时，请刷新后重试'))
+        }, 20_000)
+      }
+    }
+    document.head.append(script)
+  }).catch((error: unknown) => {
+    cvScript = null
+    throw error
+  })
+  return cvScript
+}
+
 async function initialize() {
   const attempt = ++modelAttempt
   const totalStarted = performance.now()
   console.info('[smart-mirror][anime] 模型加载开始', { attempt })
-  // OpenCV stays in its own lazy chunk; photo detection does not download it.
-  let started = performance.now()
-  const cvModule = (await import('@techstark/opencv-js') as unknown as { default: AnimeCv | Promise<AnimeCv> }).default
-  log('OpenCV.js 下载并解析', started, { attempt })
-  started = performance.now()
-  let cv: AnimeCv
-  if (cvModule instanceof Promise) {
-    cv = await cvModule
-  } else {
-    cv = cvModule
-    if (!cv.Mat) await new Promise<void>((resolve) => { cv.onRuntimeInitialized = resolve })
-  }
-  log('OpenCV 运行时初始化', started, { attempt })
+  const { cv } = await loadOpenCvScript(attempt)
 
-  started = performance.now()
+  let started = performance.now()
   const response = await fetch(`${import.meta.env.BASE_URL}anime-model/${MODEL_NAME}`)
   if (!response.ok) throw new Error('动漫人脸模型加载失败')
   const modelBytes = new Uint8Array(await response.arrayBuffer())
