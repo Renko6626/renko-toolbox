@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { facesFromDetections, mergeFaces } from './faces.ts'
+import { facesFromAnimeRects, facesFromDetections, mergeFaces } from './faces.ts'
 
 test('uses eye midpoint and nose to place a face axis on a half-pixel', () => {
   const faces = facesFromDetections([{
@@ -38,4 +38,16 @@ test('merges overlapping detections without dropping separate faces', () => {
   ])
 
   assert.deepEqual(faces.map((face) => face.axis), [142, 440])
+})
+
+test('anime face boxes map back from the detection canvas to the original image', () => {
+  const faces = facesFromAnimeRects([
+    { x: 10, y: 20, width: 21, height: 30 },
+    { x: 80, y: 5, width: 20, height: 20 },
+  ], 2, 3, 200)
+
+  assert.deepEqual(faces.map(({ x, y, width, height, axis }) => ({ x, y, width, height, axis })), [
+    { x: 20, y: 60, width: 42, height: 90, axis: 41 },
+    { x: 160, y: 15, width: 40, height: 60, axis: 180 },
+  ])
 })

@@ -4,10 +4,12 @@ import type { FaceDetector } from '@mediapipe/tasks-vision'
 import { NButton, useMessage } from 'naive-ui'
 import { mirrorSegments } from '../mirror/geometry'
 import { detectFaces, loadFaceDetector } from './detector'
+import { detectAnimeFaces } from './anime-detector'
 import type { Face } from './faces'
 import { useImageImport } from '../mirror/useImageImport'
 
 type Direction = 'left' | 'right'
+type FaceMode = 'photo' | 'anime'
 
 const message = useMessage()
 const source = shallowRef<HTMLImageElement | null>(null)
@@ -20,6 +22,7 @@ const detectionError = ref('')
 const renderError = ref('')
 const axis = ref(0.5)
 const direction = ref<Direction>('left')
+const faceMode = ref<FaceMode>('photo')
 const canvas = ref<HTMLCanvasElement | null>(null)
 
 const sourceWidth = computed(() => source.value?.naturalWidth ?? 0)
@@ -31,6 +34,7 @@ const axisPercent = computed(() => `${axis.value / sourceWidth.value * 100}%`)
 const sourceFrameWidth = computed(() => `min(100%, ${sourceWidth.value}px, ${70 * sourceWidth.value / sourceHeight.value}vh)`)
 
 let loadVersion = 0
+let detectionVersion = 0
 let frame = 0
 let detectorPromise: Promise<FaceDetector> | null = null
 let axisTouched = false
@@ -42,6 +46,8 @@ function getDetector() {
 
 async function loadFile(file: File) {
   const version = ++loadVersion
+  detectionVersion++
+  detecting.value = false
   const url = URL.createObjectURL(file)
   const image = new Image()
   image.src = url
@@ -69,14 +75,28 @@ async function loadFile(file: File) {
   source.value = image
   detectionError.value = ''
   renderError.value = ''
-  detecting.value = true
   if (oldUrl) URL.revokeObjectURL(oldUrl)
 
+  await runDetection(image)
+}
+
+async function runDetection(image: HTMLImageElement) {
+  const version = ++detectionVersion
+  faces.value = []
+  selectedFace.value = null
+  detectionError.value = ''
+  detecting.value = true
+
   try {
-    const detector = await getDetector()
-    if (version !== loadVersion) return
-    const found = await detectFaces(detector, image, () => version === loadVersion)
-    if (version !== loadVersion) return
+    let found: Face[]
+    if (faceMode.value === 'anime') {
+      found = await detectAnimeFaces(image, () => version === detectionVersion)
+    } else {
+      const detector = await getDetector()
+      if (version !== detectionVersion) return
+      found = await detectFaces(detector, image, () => version === detectionVersion)
+    }
+    if (version !== detectionVersion) return
 
     faces.value = found
     if (found.length && !axisTouched) {
@@ -85,16 +105,26 @@ async function loadFile(file: File) {
       selectFace(largest)
     }
   } catch {
-    if (version === loadVersion) {
-      detectorPromise = null
+    if (version === detectionVersion) {
+      if (faceMode.value === 'photo') detectorPromise = null
       detectionError.value = '人脸检测未能完成；仍可手动移动对称轴。'
     }
   } finally {
-    if (version === loadVersion) detecting.value = false
+    if (version === detectionVersion) detecting.value = false
   }
 }
 
 const { chooseFile, pasteFromClipboard } = useImageImport(loadFile, (text) => message.warning(text))
+
+function setFaceMode(mode: FaceMode) {
+  if (faceMode.value === mode) return
+  faceMode.value = mode
+  if (source.value) {
+    axis.value = source.value.naturalWidth / 2
+    axisTouched = false
+    void runDetection(source.value)
+  }
+}
 
 function selectFace(index: number) {
   axisTouched = true
@@ -195,6 +225,7 @@ function download() {
 
 onUnmounted(() => {
   loadVersion++
+  detectionVersion++
   if (frame) cancelAnimationFrame(frame)
   if (sourceUrl.value) URL.revokeObjectURL(sourceUrl.value)
   detectorPromise?.then((detector) => detector.close()).catch(() => {})
@@ -206,7 +237,7 @@ onUnmounted(() => {
     <div class="toolbar">
       <div class="toolbar-copy">
         <p class="eyebrow">图片来源</p>
-        <p class="toolbar-title">选择或粘贴一张照片</p>
+        <p class="toolbar-title">{{ faceMode === 'anime' ? '选择或粘贴一张二次元图片' : '选择或粘贴一张照片' }}</p>
       </div>
       <div class="toolbar-actions">
         <label class="file-button">
@@ -215,6 +246,13 @@ onUnmounted(() => {
         </label>
         <NButton @click="pasteFromClipboard">粘贴图片</NButton>
       </div>
+      <div class="mode-picker" role="group" aria-label="人脸识别模式">
+        <span class="eyebrow">识别对象</span>
+        <div class="mode-buttons">
+          <button type="button" :aria-pressed="faceMode === 'photo'" @click="setFaceMode('photo')">真人照片</button>
+          <button type="button" :aria-pressed="faceMode === 'anime'" @click="setFaceMode('anime')">二次元角色</button>
+        </div>
+      </div>
       <span class="privacy">也可按 Ctrl/⌘+V 粘贴；图片和人脸检测都在浏览器里完成。</span>
     </div>
 
@@ -222,9 +260,9 @@ onUnmounted(() => {
       <div class="controls">
         <div class="face-picker">
           <p class="eyebrow">识别到的人脸</p>
-          <p v-if="detecting" class="status" role="status">正在检测人脸…</p>
+          <p v-if="detecting" class="status" role="status">{{ faceMode === 'anime' ? '正在检测二次元人脸…' : '正在检测人脸…' }}</p>
           <p v-else-if="detectionError" class="status" role="alert">{{ detectionError }}</p>
-          <p v-else-if="!faces.length" class="status">没有找到人脸；可以手动设置对称轴。</p>
+          <p v-else-if="!faces.length" class="status">{{ faceMode === 'anime' ? '没有找到二次元人脸；可以手动设置对称轴。' : '没有找到人脸；可以手动设置对称轴。' }}</p>
           <div v-else class="face-buttons">
             <button
               v-for="(face, index) in faces"
@@ -301,7 +339,7 @@ onUnmounted(() => {
       <div class="empty-copy">
         <p class="eyebrow">预览区</p>
         <p class="empty-title">等待照片</p>
-        <p class="empty-detail">选取或粘贴后，自动标出照片中的人脸与对称轴。</p>
+        <p class="empty-detail">{{ faceMode === 'anime' ? '选取或粘贴后，自动标出二次元角色的人脸与对称轴。' : '选取或粘贴后，自动标出照片中的人脸与对称轴。' }}</p>
       </div>
       <div class="empty-graphic" aria-hidden="true"><span></span><i></i><span></span></div>
     </div>
@@ -321,6 +359,21 @@ onUnmounted(() => {
 }
 .toolbar-title { margin-top: var(--s-1); font-size: var(--step-1); line-height: 1.3; }
 .toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
+.mode-picker { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-3); }
+.mode-buttons { display: inline-flex; }
+.mode-buttons button {
+  min-height: 36px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+.mode-buttons button + button { border-left: 0; }
+.mode-buttons button[aria-pressed="true"] { border-color: var(--text); background: var(--text); color: var(--bg); }
+.mode-buttons button:hover:not([aria-pressed="true"]) { border-color: var(--text); }
 .file-button {
   position: relative;
   display: inline-flex;

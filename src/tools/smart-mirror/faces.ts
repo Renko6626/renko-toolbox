@@ -7,6 +7,23 @@ export interface Face {
   score: number
 }
 
+export function facesFromAnimeRects(
+  rects: { x: number; y: number; width: number; height: number }[],
+  scaleX: number,
+  scaleY: number,
+  imageWidth: number,
+): Face[] {
+  return rects.filter((rect) => rect.width > 0 && rect.height > 0).map((rect) => ({
+    x: rect.x * scaleX,
+    y: rect.y * scaleY,
+    width: rect.width * scaleX,
+    height: rect.height * scaleY,
+    axis: Math.min(imageWidth - 0.5, Math.max(0.5,
+      Math.round((rect.x + rect.width / 2) * scaleX * 2) / 2)),
+    score: 1,
+  })).sort((a, b) => a.x - b.x || a.y - b.y)
+}
+
 interface FaceDetection {
   boundingBox?: { originX: number; originY: number; width: number; height: number }
   keypoints: { x: number; y: number }[]
