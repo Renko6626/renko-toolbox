@@ -33,7 +33,7 @@ async function submit() {
   <slot v-if="quotes" />
   <form v-else-if="!checking" class="gate" @submit.prevent="submit">
     <p class="eyebrow">已加密</p>
-    <p class="lede">聊天记录在服务器上只存加密后的密文，输入密钥后才会在你的浏览器里解开。密钥找 Renko 要。</p>
+    <p class="lede">馆藏内容仅以密文保存，输入密钥后才会在你的浏览器里解开。密钥请向持有者索取。</p>
     <NInput
       v-model:value="key"
       type="password"

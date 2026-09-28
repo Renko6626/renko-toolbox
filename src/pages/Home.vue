@@ -17,9 +17,9 @@ const count = String(tools.length).padStart(2, '0')
 
 <template>
   <section class="intro">
-    <h1 class="title">工具箱</h1>
+    <h1 class="title">左右对称</h1>
     <p class="count mono">{{ count }} 件</p>
-    <p class="lede">一些顺手写的小工具，全在浏览器里跑，不上传任何东西。</p>
+    <p class="lede">俄苏恶搞小助手</p>
     <NInput
       v-if="tools.length"
       v-model:value="q"

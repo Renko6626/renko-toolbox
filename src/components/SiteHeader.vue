@@ -6,7 +6,7 @@ const route = useRoute()
 
 <template>
   <header class="header">
-    <RouterLink to="/" class="wordmark">Renko / Toolbox</RouterLink>
+    <RouterLink to="/" class="wordmark">左右对称</RouterLink>
     <nav class="nav" aria-label="站点">
       <RouterLink v-if="route.name !== 'home'" to="/" class="link">全部工具</RouterLink>
       <a href="https://renko6626.github.io/" class="link">主页</a>

@@ -8,7 +8,7 @@ export const withTime = ref(false)
 export function useCopy() {
   const message = useMessage()
   return async function copy(x: Quote) {
-    const s = withTime.value ? `[${x.time}] 阿伪: ${x.text}` : x.text
+    const s = withTime.value ? `[${x.time}] 神秘人: ${x.text}` : x.text
     try {
       await navigator.clipboard.writeText(s)
     } catch {
