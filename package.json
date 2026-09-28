@@ -1,9 +1,9 @@
 {
-  "name": "left-right-symmetry",
+  "name": "renko-toolbox",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "俄苏恶搞小助手",
+  "description": "一些纯前端的趣味日常小工具",
   "scripts": {
     "dev": "vite",
     "build": "node scripts/prepare-semantic.ts && vue-tsc --noEmit && vite build",

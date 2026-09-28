@@ -31,5 +31,5 @@ export const router = createRouter({
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.tool ? `${to.meta.tool.name} · 左右对称` : '左右对称'
+  document.title = to.meta.tool ? `${to.meta.tool.name} · Toolbox` : 'Toolbox · Renko'
 })

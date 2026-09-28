@@ -1,6 +1,6 @@
-# 左右对称
+# Renko Toolbox
 
-俄苏恶搞小助手。Vue 3 + Naive UI + Vite，全部跑在浏览器里，没有后端。
+一些纯前端的趣味日常小工具。Vue 3 + Naive UI + Vite，全部跑在浏览器里，没有后端。
 
 在线地址：<https://renko6626.github.io/renko-toolbox/>
 
