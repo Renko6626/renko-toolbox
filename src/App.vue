@@ -67,6 +67,8 @@ main:focus {
   outline: none;
 }
 .tool-body {
+  max-width: 1600px;
+  margin: 0 auto;
   padding: var(--s-5) var(--page-x) var(--s-7);
 }
 </style>

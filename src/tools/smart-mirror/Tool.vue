@@ -204,11 +204,17 @@ onUnmounted(() => {
 <template>
   <section class="smart-mirror">
     <div class="toolbar">
-      <label class="file-button">
-        选择照片 / 相册
-        <input type="file" accept="image/*" aria-label="选择照片或从相册选取" @change="chooseFile" />
-      </label>
-      <NButton @click="pasteFromClipboard">粘贴图片</NButton>
+      <div class="toolbar-copy">
+        <p class="eyebrow">图片来源</p>
+        <p class="toolbar-title">选择或粘贴一张照片</p>
+      </div>
+      <div class="toolbar-actions">
+        <label class="file-button">
+          选择照片 / 相册
+          <input type="file" accept="image/*" aria-label="选择照片或从相册选取" @change="chooseFile" />
+        </label>
+        <NButton @click="pasteFromClipboard">粘贴图片</NButton>
+      </div>
       <span class="privacy">也可按 Ctrl/⌘+V 粘贴；图片和人脸检测都在浏览器里完成。</span>
     </div>
 
@@ -232,7 +238,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <fieldset>
+        <fieldset class="control">
           <legend class="eyebrow">保留哪一侧</legend>
           <div class="direction-buttons">
             <button type="button" :aria-pressed="direction === 'left'" @click="direction = 'left'">左 → 右</button>
@@ -240,7 +246,7 @@ onUnmounted(() => {
           </div>
         </fieldset>
 
-        <div class="axis-control">
+        <div class="axis-control control">
           <label for="smart-mirror-axis" class="eyebrow">对称轴 <span class="mono">{{ axis }} px</span></label>
           <input
             id="smart-mirror-axis"
@@ -255,7 +261,7 @@ onUnmounted(() => {
           <div class="range-ends mono"><span>左侧</span><span>右侧</span></div>
         </div>
 
-        <div class="export-control">
+        <div class="export-control control">
           <p class="dimensions mono">{{ sourceWidth }} × {{ sourceHeight }} → {{ outputWidth }} × {{ sourceHeight }}</p>
           <NButton type="primary" :disabled="!!renderError" @click="download">下载 PNG</NButton>
         </div>
@@ -291,13 +297,30 @@ onUnmounted(() => {
       </div>
     </template>
 
-    <p v-else class="empty">选择一张照片，自动检测结果会显示在这里。</p>
+    <div v-else class="empty">
+      <div class="empty-copy">
+        <p class="eyebrow">预览区</p>
+        <p class="empty-title">等待照片</p>
+        <p class="empty-detail">选取或粘贴后，自动标出照片中的人脸与对称轴。</p>
+      </div>
+      <div class="empty-graphic" aria-hidden="true"><span></span><i></i><span></span></div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.smart-mirror { max-width: 1440px; }
-.toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-3); }
+.smart-mirror { width: 100%; }
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+  padding: var(--s-4);
+  border: 1px solid var(--hairline);
+  background: var(--bg-raise);
+}
+.toolbar-title { margin-top: var(--s-1); font-size: var(--step-1); line-height: 1.3; }
+.toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
 .file-button {
   position: relative;
   display: inline-flex;
@@ -305,16 +328,31 @@ onUnmounted(() => {
   min-height: 40px;
   padding: 0 20px;
   border: 1px solid var(--line);
+  background: var(--bg);
   cursor: pointer;
 }
-.file-button:hover { border-color: var(--text); background: var(--bg-raise); }
+.file-button:hover { border-color: var(--text); }
 .file-button:focus-within { outline: 2px solid var(--text); outline-offset: 3px; }
 .file-button input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
-.privacy, .status, .dimensions { color: var(--text-mute); font-size: var(--step--1); }
-.controls { display: grid; gap: var(--s-4); margin-top: var(--s-5); padding-bottom: var(--s-5); border-bottom: 1px solid var(--hairline); }
-.face-picker { min-width: 0; }
-.face-picker > .eyebrow { margin-bottom: var(--s-2); }
+.privacy {
+  grid-column: 1 / -1;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--hairline);
+  color: var(--text-mute);
+  font-size: var(--step--1);
+}
+.status, .dimensions { color: var(--text-mute); font-size: var(--step--1); }
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  margin-top: var(--s-5);
+  border-bottom: 1px solid var(--hairline);
+}
+.face-picker { grid-column: 1 / -1; min-width: 0; padding-bottom: var(--s-4); margin-bottom: var(--s-4); border-bottom: 1px solid var(--hairline); }
+.face-picker > .eyebrow { margin-bottom: var(--s-3); }
 .face-buttons { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.control { min-width: 0; padding: 0 var(--s-4) var(--s-4); border-left: 1px solid var(--hairline); }
+.face-picker + .control { padding-left: 0; border-left: 0; }
 .face-buttons button, .direction-buttons button {
   min-height: 40px;
   padding: 0 var(--s-3);
@@ -334,11 +372,11 @@ legend { margin-bottom: var(--s-2); }
 .axis-control label { display: flex; justify-content: space-between; gap: var(--s-2); }
 .axis-control input[type="range"] { display: block; width: 100%; margin: var(--s-3) 0 var(--s-1); accent-color: var(--text); }
 .range-ends { display: flex; justify-content: space-between; color: var(--text-mute); font-size: var(--step--1); }
-.export-control { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); }
-.previews { display: grid; gap: var(--s-5); margin-top: var(--s-5); }
-figure { min-width: 0; }
-figcaption { margin-bottom: var(--s-3); }
-.image-frame { position: relative; display: inline-block; line-height: 0; }
+.export-control { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin-top: var(--s-5); }
+figure { display: flex; flex-direction: column; min-width: 0; min-height: 320px; border: 1px solid var(--hairline); background: var(--bg-raise); }
+figcaption { width: 100%; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--hairline); }
+.image-frame { position: relative; display: inline-block; margin: auto; line-height: 0; }
 .image-frame img { display: block; width: 100%; height: auto; }
 .face-box { position: absolute; z-index: 1; margin: 0; padding: 0; background: transparent; border: 1px solid var(--text-mute); cursor: pointer; }
 .face-box.selected, .face-box:hover { border: 2px solid var(--text); }
@@ -346,12 +384,38 @@ figcaption { margin-bottom: var(--s-3); }
 .face-box.selected .face-midline { background: var(--text); }
 .face-number { position: absolute; top: 0; left: 0; padding: 2px 5px; background: var(--text); color: var(--bg); font-size: var(--step--1); line-height: 1; }
 .axis-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--text); box-shadow: 0 0 0 1px var(--bg); pointer-events: none; }
-canvas { display: block; max-width: 100%; max-height: 70vh; width: auto; height: auto; }
-.empty { margin-top: var(--s-6); color: var(--text-mute); }
+canvas { display: block; max-width: calc(100% - 2 * var(--s-4)); max-height: 70vh; width: auto; height: auto; margin: auto; }
+.empty {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 300px;
+  margin-top: var(--s-5);
+  border: 1px solid var(--hairline);
+  background: var(--bg-raise);
+}
+.empty-copy { display: flex; flex-direction: column; justify-content: center; padding: var(--s-5); }
+.empty-title { margin-top: var(--s-3); font-size: var(--step-2); line-height: var(--leading-tight); }
+.empty-detail { margin-top: var(--s-3); max-width: var(--measure-cjk); color: var(--text-mute); }
+.empty-graphic { display: flex; align-items: stretch; justify-content: center; gap: var(--s-3); padding: var(--s-6) var(--s-5); border-left: 1px solid var(--hairline); }
+.empty-graphic span { width: 24%; border: 1px solid var(--line); }
+.empty-graphic i { width: 1px; background: var(--text); }
 .error { margin-top: var(--s-4); color: var(--text); }
-@media (min-width: 900px) {
-  .controls { grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr) auto; align-items: end; }
-  .face-picker { grid-column: 1 / -1; }
-  .previews { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 899px) {
+  .controls { grid-template-columns: 1fr; }
+  .face-picker { margin-bottom: 0; }
+  .control { padding: var(--s-4) 0; border-left: 0; border-top: 1px solid var(--hairline); }
+  .face-picker + .control { padding-top: var(--s-4); border-top: 0; }
+  .export-control { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .previews { grid-template-columns: 1fr; }
+}
+@media (max-width: 599px) {
+  .toolbar { grid-template-columns: 1fr; padding: var(--s-3); }
+  .toolbar-title { font-size: 1.25rem; }
+  .empty { grid-template-columns: 1fr; }
+  .empty-copy { padding: var(--s-4); }
+  .empty-title { font-size: 2rem; }
+  .empty-graphic { min-height: 140px; padding: var(--s-4); border-left: 0; border-top: 1px solid var(--hairline); }
+  figcaption { padding: var(--s-3); }
+  canvas { max-width: calc(100% - 2 * var(--s-3)); }
 }
 </style>

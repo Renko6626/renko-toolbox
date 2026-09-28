@@ -6,6 +6,7 @@ dist
 !.vscode/extensions.json
 .idea
 *.log
+.superdesign/
 
 # 语义搜索的构建产物（scripts/prepare-semantic.ts 生成）
 public/models/
