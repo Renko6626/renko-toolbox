@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "node scripts/prepare-semantic.ts && vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types src/tools/mirror/geometry.test.ts && node --experimental-strip-types src/tools/smart-mirror/faces.test.ts",
+    "test": "node --experimental-strip-types src/tools/mirror/geometry.test.ts && node --experimental-strip-types src/tools/mirror/image-source.test.ts && node --experimental-strip-types src/tools/smart-mirror/faces.test.ts",
     "typecheck": "vue-tsc --noEmit",
     "encrypt": "node scripts/encrypt-awei.ts"
   },

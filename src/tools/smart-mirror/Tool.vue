@@ -5,6 +5,7 @@ import { NButton, useMessage } from 'naive-ui'
 import { mirrorSegments } from '../mirror/geometry'
 import { detectFaces, loadFaceDetector } from './detector'
 import type { Face } from './faces'
+import { useImageImport } from '../mirror/useImageImport'
 
 type Direction = 'left' | 'right'
 
@@ -39,12 +40,7 @@ function getDetector() {
   return detectorPromise
 }
 
-async function chooseFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-
+async function loadFile(file: File) {
   const version = ++loadVersion
   const url = URL.createObjectURL(file)
   const image = new Image()
@@ -97,6 +93,8 @@ async function chooseFile(event: Event) {
     if (version === loadVersion) detecting.value = false
   }
 }
+
+const { chooseFile, pasteFromClipboard } = useImageImport(loadFile, (text) => message.warning(text))
 
 function selectFace(index: number) {
   axisTouched = true
@@ -207,10 +205,11 @@ onUnmounted(() => {
   <section class="smart-mirror">
     <div class="toolbar">
       <label class="file-button">
-        选择照片
-        <input type="file" accept="image/*" aria-label="选择照片" @change="chooseFile" />
+        选择照片 / 相册
+        <input type="file" accept="image/*" aria-label="选择照片或从相册选取" @change="chooseFile" />
       </label>
-      <span class="privacy">图片和人脸检测都在浏览器里完成。</span>
+      <NButton @click="pasteFromClipboard">粘贴图片</NButton>
+      <span class="privacy">也可按 Ctrl/⌘+V 粘贴；图片和人脸检测都在浏览器里完成。</span>
     </div>
 
     <template v-if="source">

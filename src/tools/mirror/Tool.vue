@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { NButton, useMessage } from 'naive-ui'
 import { mirrorSegments } from './geometry'
+import { useImageImport } from './useImageImport'
 
 type Direction = 'left' | 'right'
 
@@ -25,12 +26,7 @@ const sourceFrameWidth = computed(() => `min(100%, ${sourceWidth.value}px, ${70 
 let loadVersion = 0
 let frame = 0
 
-async function chooseFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-
+async function loadFile(file: File) {
   const version = ++loadVersion
   const url = URL.createObjectURL(file)
   const image = new Image()
@@ -56,6 +52,8 @@ async function chooseFile(event: Event) {
     if (version === loadVersion) message.error('无法打开这张图片，请换一张试试')
   }
 }
+
+const { chooseFile, pasteFromClipboard } = useImageImport(loadFile, (text) => message.warning(text))
 
 function render() {
   frame = 0
@@ -135,10 +133,11 @@ onUnmounted(() => {
   <section class="mirror-tool">
     <div class="toolbar">
       <label class="file-button">
-        选择图片
-        <input type="file" accept="image/*" aria-label="选择图片" @change="chooseFile" />
+        选择图片 / 相册
+        <input type="file" accept="image/*" aria-label="选择图片或从相册选取" @change="chooseFile" />
       </label>
-      <span class="privacy">图片只在浏览器里处理，不会上传。</span>
+      <NButton @click="pasteFromClipboard">粘贴图片</NButton>
+      <span class="privacy">也可按 Ctrl/⌘+V 粘贴；图片只在浏览器里处理。</span>
     </div>
 
     <template v-if="source">
