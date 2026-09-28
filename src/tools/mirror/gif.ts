@@ -62,7 +62,8 @@ function compositor(animation: GifAnimation) {
       if (frame.patch[from + 3]) pixels.set(frame.patch.subarray(from, from + 4), ((y + d.top) * width + x + d.left) * 4)
     }
     previous = frame
-    return { pixels, delay: Math.max(0, frame.delay * 10) }
+    // gifuct-js already converts the GIF centisecond delay to milliseconds.
+    return { pixels, delay: frame.delay }
   }
 }
 
