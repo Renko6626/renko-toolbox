@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { NButton, useMessage } from 'naive-ui'
 import { mirrorSegments } from './geometry'
 import { useImageImport } from './useImageImport'
+import { gifPreview, mirrorGif, readGif, type GifAnimation } from './gif'
 
 type Direction = 'left' | 'right'
 
@@ -14,6 +15,9 @@ const axis = ref(0.5)
 const direction = ref<Direction>('left')
 const canvas = ref<HTMLCanvasElement | null>(null)
 const renderError = ref('')
+const gif = shallowRef<GifAnimation | null>(null)
+const gifBusy = ref(false)
+const gifProgress = ref(0)
 
 const sourceWidth = computed(() => source.value?.naturalWidth ?? 0)
 const sourceHeight = computed(() => source.value?.naturalHeight ?? 0)
@@ -29,8 +33,21 @@ let frame = 0
 async function loadFile(file: File) {
   const version = ++loadVersion
   const url = URL.createObjectURL(file)
+  let animation: GifAnimation | null = null
+  try { animation = await readGif(file) } catch (error) {
+    if (file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')) {
+      URL.revokeObjectURL(url)
+      if (version === loadVersion) message.error(error instanceof Error ? error.message : '无法打开 GIF')
+      return
+    }
+  }
   const image = new Image()
-  image.src = url
+  if (animation) {
+    try {
+      const preview = await gifPreview(animation)
+      image.src = URL.createObjectURL(preview)
+    } catch { URL.revokeObjectURL(url); message.error('无法生成 GIF 预览'); return }
+  } else image.src = url
 
   try {
     await image.decode()
@@ -43,6 +60,7 @@ async function loadFile(file: File) {
     const oldUrl = sourceUrl.value
     axis.value = image.naturalWidth / 2
     filename.value = file.name
+    gif.value = animation
     sourceUrl.value = url
     source.value = image
     renderError.value = ''
@@ -104,6 +122,18 @@ function download() {
 
   const name = filename.value.replace(/\.[^.]+$/, '') || 'image'
   const selectedDirection = direction.value
+  if (gif.value) {
+    gifBusy.value = true
+    gifProgress.value = 0
+    void mirrorGif(gif.value, axis.value, selectedDirection, value => { gifProgress.value = value }, () => source.value !== null)
+      .then(blob => {
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a'); link.href = url; link.download = `${name}-mirror-${selectedDirection}.gif`; link.click()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      }).catch(error => { if (error instanceof Error && error.message !== '已取消 GIF 导出') message.error(error.message) })
+      .finally(() => { gifBusy.value = false })
+    return
+  }
   try {
     canvas.value.toBlob((blob) => {
       if (!blob) {
@@ -143,7 +173,7 @@ onUnmounted(() => {
         </label>
         <NButton @click="pasteFromClipboard">粘贴图片</NButton>
       </div>
-      <span class="privacy">也可按 Ctrl/⌘+V 粘贴；图片只在浏览器里处理。</span>
+      <span class="privacy">也可按 Ctrl/⌘+V 粘贴；图片只在浏览器里处理。GIF 支持动画，文件请控制在 5 MB 以内。</span>
     </div>
 
     <template v-if="source">
@@ -176,7 +206,7 @@ onUnmounted(() => {
 
         <div class="export-control control">
           <p class="dimensions mono">{{ sourceWidth }} × {{ sourceHeight }} → {{ outputWidth }} × {{ sourceHeight }}</p>
-          <NButton type="primary" :disabled="!!renderError" @click="download">下载 PNG</NButton>
+          <NButton type="primary" :disabled="!!renderError || gifBusy" @click="download">{{ gifBusy ? `正在生成 GIF ${gifProgress}%` : gif ? '下载 GIF' : '下载 PNG' }}</NButton>
         </div>
       </div>
 
